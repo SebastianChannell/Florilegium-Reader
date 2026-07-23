@@ -1,5 +1,9 @@
 @import url("viewer-base.css");
 
+:root {
+  --florilegium-book-contrast: 1.8;
+}
+
 /* Florilegium Reader toolbar */
 #toolbarContainer,
 .toolbar {
@@ -7,15 +11,25 @@
   background-image: none;
 }
 
-.florilegiumInvertColors #viewerContainer {
-  background-color: #111;
+.florilegiumInvertColors #viewerContainer,
+.florilegiumBookMode #viewerContainer {
+  background-color: #000;
 }
 
 .florilegiumInvertColors .pdfViewer .page {
   filter: invert(1) hue-rotate(180deg);
 }
 
-.florilegiumInvertButton .florilegiumInvertIcon {
+/*
+ * Book Mode is designed for scanned pages: it removes color, strengthens the
+ * paper/ink separation, then reverses the page to light text on black.
+ */
+.florilegiumBookMode .pdfViewer .page {
+  background-color: #000;
+  filter: grayscale(1) contrast(var(--florilegium-book-contrast)) brightness(0.9) invert(1);
+}
+
+.florilegiumCustomIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -25,18 +39,63 @@
   line-height: 1;
 }
 
-/* Keep the toggle visually consistent with the other toolbar buttons. */
-.florilegiumInvertButton[aria-pressed="true"] {
+.florilegiumBookModeButton .florilegiumCustomIcon {
+  font-family: serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+/* Keep active reading buttons visually consistent with the toolbar. */
+.florilegiumReadingButton[aria-pressed="true"] {
   background-color: transparent;
 }
 
-.florilegiumInvertButton[aria-pressed="true"]:hover,
-.florilegiumInvertButton[aria-pressed="true"]:focus-visible {
+.florilegiumReadingButton[aria-pressed="true"]:hover,
+.florilegiumReadingButton[aria-pressed="true"]:focus-visible {
   background-color: var(--button-hover-color);
 }
 
+.florilegiumBookModeControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--toolbar-height);
+  padding-inline: 4px 7px;
+  white-space: nowrap;
+}
+
+.florilegiumBookModeControls[hidden] {
+  display: none;
+}
+
+.florilegiumBookModeSlider {
+  width: 88px;
+  accent-color: #fff;
+  cursor: pointer;
+}
+
+.florilegiumBookModeValue {
+  min-width: 35px;
+  color: var(--main-color);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+@media (max-width: 700px) {
+  .florilegiumBookModeSlider {
+    width: 62px;
+  }
+
+  .florilegiumBookModeValue {
+    display: none;
+  }
+}
+
 @media print {
-  .florilegiumInvertColors .pdfViewer .page {
+  .florilegiumInvertColors .pdfViewer .page,
+  .florilegiumBookMode .pdfViewer .page {
     filter: none;
   }
 }
