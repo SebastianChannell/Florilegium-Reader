@@ -1,5 +1,12 @@
 @import url("viewer-base.css");
 
+/* Florilegium Reader toolbar */
+#toolbarContainer,
+.toolbar {
+  background-color: #000;
+  background-image: none;
+}
+
 .florilegiumInvertColors #viewerContainer {
   background-color: #111;
 }
@@ -18,7 +25,13 @@
   line-height: 1;
 }
 
+/* Keep the toggle visually consistent with the other toolbar buttons. */
 .florilegiumInvertButton[aria-pressed="true"] {
+  background-color: transparent;
+}
+
+.florilegiumInvertButton[aria-pressed="true"]:hover,
+.florilegiumInvertButton[aria-pressed="true"]:focus-visible {
   background-color: var(--button-hover-color);
 }
 
