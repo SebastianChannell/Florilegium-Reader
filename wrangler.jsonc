@@ -3,5 +3,8 @@
   "compatibility_date": "2026-07-10",
   "assets": {
     "directory": "."
+  },
+  "observability": {
+    "enabled": false
   }
 }
