@@ -87,6 +87,35 @@ button.florilegiumReadingButton > .florilegiumCustomIcon {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 7V3L2 9l7 6v-4c5 0 8 1.5 11 5-1-6-4-9-11-9Z'/%3E%3C/svg%3E");
 }
 
+.florilegiumIcon-cloud {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.5 19A5.5 5.5 0 0 1 6.7 8.1 7 7 0 0 1 20 11a4 4 0 0 1 0 8H7.5Zm0-2H20a2 2 0 1 0-.4-4l-1.5.3-.1-1.5A5 5 0 0 0 8.2 10l-.3 1.2-1.2-.1A3.5 3.5 0 0 0 7.5 17Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.5 19A5.5 5.5 0 0 1 6.7 8.1 7 7 0 0 1 20 11a4 4 0 0 1 0 8H7.5Zm0-2H20a2 2 0 1 0-.4-4l-1.5.3-.1-1.5A5 5 0 0 0 8.2 10l-.3 1.2-1.2-.1A3.5 3.5 0 0 0 7.5 17Z'/%3E%3C/svg%3E");
+}
+
+.florilegiumSyncButton[data-sync-status="local"] .florilegiumCustomIcon,
+.florilegiumSyncButton[data-sync-status="error"] .florilegiumCustomIcon {
+  background-color: #d7aa62;
+}
+
+.florilegiumSyncButton[data-sync-status="loading"] .florilegiumCustomIcon,
+.florilegiumSyncButton[data-sync-status="saving"] .florilegiumCustomIcon {
+  background-color: #a77aeb;
+  animation: florilegiumSyncPulse 1s ease-in-out infinite alternate;
+}
+
+.florilegiumSyncButton[data-sync-status="synced"] .florilegiumCustomIcon {
+  background-color: #83c98a;
+}
+
+.florilegiumSyncButton[data-sync-status="empty"] .florilegiumCustomIcon {
+  background-color: #a77aeb;
+}
+
+@keyframes florilegiumSyncPulse {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
 .florilegiumIcon-invert {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2a10 10 0 1 0 0 20V2Zm0 2v16a8 8 0 0 1 0-16Z'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2a10 10 0 1 0 0 20V2Zm0 2v16a8 8 0 0 1 0-16Z'/%3E%3C/svg%3E");
@@ -136,7 +165,8 @@ button.florilegiumReadingButton > .florilegiumCustomIcon {
 
 /*
  * A small, non-destructive drawing layer for reading marks. Strokes are kept
- * outside the PDF and saved per document in this browser.
+ * outside the PDF and saved per document in the local cache and encrypted
+ * permanent sync storage when enabled.
  */
 .florilegiumInkLayer {
   position: absolute;
@@ -176,6 +206,100 @@ button.florilegiumReadingButton > .florilegiumCustomIcon {
 
 .florilegiumInkButton[hidden] {
   display: none;
+}
+
+.florilegiumSyncDialog {
+  box-sizing: border-box;
+  width: min(92vw, 420px);
+  max-height: min(86vh, 620px);
+  padding: 22px;
+  overflow: auto;
+  color: #f4f0f8;
+  background: #121013;
+  border: 1px solid #3f3448;
+  border-radius: 12px;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.65);
+}
+
+.florilegiumSyncDialog::backdrop {
+  background: rgb(0 0 0 / 0.72);
+}
+
+.florilegiumSyncDialog h2 {
+  margin: 0 0 12px;
+  color: #d7aa62;
+  font-size: 20px;
+}
+
+.florilegiumSyncDialog p {
+  margin: 10px 0;
+  line-height: 1.45;
+}
+
+.florilegiumSyncWarning {
+  color: #d8c7e9;
+  font-size: 13px;
+}
+
+.florilegiumSyncForm {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.florilegiumSyncForm label {
+  font-weight: 600;
+}
+
+.florilegiumSyncForm input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 11px;
+  color: #fff;
+  background: #070606;
+  border: 1px solid #62536f;
+  border-radius: 7px;
+  font: inherit;
+}
+
+.florilegiumSyncForm input:focus {
+  border-color: #8451cf;
+  outline: 2px solid rgb(132 81 207 / 0.35);
+}
+
+.florilegiumSyncDialog button {
+  min-height: 40px;
+  padding: 8px 13px;
+  color: #fff;
+  background: #2e2140;
+  border: 1px solid #694b91;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 600;
+}
+
+.florilegiumSyncDialog button:disabled {
+  opacity: 0.45;
+}
+
+.florilegiumSyncStatus {
+  min-height: 21px;
+  color: #83c98a;
+  font-size: 13px;
+}
+
+.florilegiumSyncStatus[data-sync-status="local"],
+.florilegiumSyncStatus[data-sync-status="error"] {
+  color: #d7aa62;
+}
+
+.florilegiumSyncActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 /* The sidecar layer replaces PDF.js's full editor suite in this reader. */

@@ -1,4 +1,11 @@
 import "./viewer-base.mjs";
+import {
+  decryptInkDocument,
+  deriveSyncCredentials,
+  encryptInkDocument,
+  getRemoteDocumentKey,
+  isValidSyncCredentials,
+} from "./annotation-sync.mjs";
 
 const INVERT_STORAGE_KEY = "florilegium-reader-invert-colors";
 const BOOK_MODE_STORAGE_KEY = "florilegium-reader-book-mode";
@@ -7,6 +14,8 @@ const INVERT_CLASS = "florilegiumInvertColors";
 const BOOK_MODE_CLASS = "florilegiumBookMode";
 const DEFAULT_SENSITIVITY = 180;
 const INK_STORAGE_PREFIX = "florilegium-reader-ink:";
+const INK_SYNC_CREDENTIALS_KEY = "florilegium-reader-annotation-sync";
+const INK_SYNC_DELAY = 1200;
 const INK_HIDDEN_CLASS = "florilegiumInkHidden";
 const INK_DRAWING_CLASS = "florilegiumInkDrawing";
 const INK_COLOR = "#8451cf";
@@ -16,6 +25,12 @@ const INK_WIDTH = 4;
 let inkDocument = createEmptyInkDocument();
 let inkDocumentId = "";
 let inkDrawingEnabled = false;
+let inkSyncCredentials = loadSyncCredentials();
+let inkSyncStatus = inkSyncCredentials ? "ready" : "local";
+let inkSyncLastSaved = 0;
+let inkSyncTimer = 0;
+let inkSyncGeneration = 0;
+let inkSyncPromptShown = false;
 
 function createEmptyInkDocument(documentId = "") {
   return {
@@ -23,6 +38,7 @@ function createEmptyInkDocument(documentId = "") {
     documentId,
     hidden: false,
     pages: {},
+    updatedAt: 0,
   };
 }
 
@@ -50,13 +66,7 @@ function getInkStorageKey(documentId = inkDocumentId) {
 function loadInkDocument(documentId) {
   try {
     const saved = JSON.parse(localStorage.getItem(getInkStorageKey(documentId)));
-    if (
-      saved?.version === 1 &&
-      saved.documentId === documentId &&
-      saved.pages &&
-      typeof saved.pages === "object" &&
-      Object.values(saved.pages).every(Array.isArray)
-    ) {
+    if (isValidInkDocument(saved, documentId)) {
       return saved;
     }
   } catch {
@@ -65,13 +75,197 @@ function loadInkDocument(documentId) {
   return createEmptyInkDocument(documentId);
 }
 
-function saveInkDocument() {
+function isValidInkDocument(value, documentId = value?.documentId) {
+  return Boolean(
+    value?.version === 1 &&
+      value.documentId === documentId &&
+      value.pages &&
+      typeof value.pages === "object" &&
+      Object.values(value.pages).every(Array.isArray)
+  );
+}
+
+function cacheInkDocument() {
   try {
     localStorage.setItem(getInkStorageKey(), JSON.stringify(inkDocument));
   } catch {
     const alert = document.getElementById("viewer-alert");
     if (alert) {
       alert.textContent = "This browser could not save the drawing layer.";
+    }
+  }
+}
+
+function saveInkDocument() {
+  inkDocument.updatedAt = Date.now();
+  cacheInkDocument();
+  if (inkSyncCredentials) {
+    scheduleInkSync();
+  } else {
+    setInkSyncStatus("local");
+  }
+}
+
+function loadSyncCredentials() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(INK_SYNC_CREDENTIALS_KEY));
+    return isValidSyncCredentials(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeSyncCredentials(credentials) {
+  inkSyncCredentials = credentials;
+  try {
+    localStorage.setItem(INK_SYNC_CREDENTIALS_KEY, JSON.stringify(credentials));
+  } catch {
+    // Sync still works for this tab if browser storage is unavailable.
+  }
+  updateInkButtons();
+}
+
+function setInkSyncStatus(status, lastSaved = inkSyncLastSaved) {
+  inkSyncStatus = status;
+  inkSyncLastSaved = lastSaved;
+  updateInkButtons();
+  updateInkSyncDialog();
+}
+
+function scheduleInkSync() {
+  window.clearTimeout(inkSyncTimer);
+  setInkSyncStatus("saving");
+  const generation = inkSyncGeneration;
+  inkSyncTimer = window.setTimeout(() => {
+    uploadInkDocument(generation);
+  }, INK_SYNC_DELAY);
+}
+
+async function getInkSyncEndpoint(documentId = inkDocumentId) {
+  const documentKey = await getRemoteDocumentKey(documentId);
+  return {
+    documentKey,
+    url: `/api/annotations/${inkSyncCredentials.vaultId}/${documentKey}`,
+  };
+}
+
+async function uploadInkDocument(generation = inkSyncGeneration) {
+  if (!inkSyncCredentials || !inkDocumentId || generation !== inkSyncGeneration) {
+    return;
+  }
+
+  const documentSnapshot = structuredClone(inkDocument);
+  const credentials = inkSyncCredentials;
+  const documentId = inkDocumentId;
+  setInkSyncStatus("saving");
+
+  try {
+    const endpoint = await getInkSyncEndpoint(documentId);
+    const envelope = await encryptInkDocument(
+      documentSnapshot,
+      credentials,
+      endpoint.documentKey
+    );
+    const response = await fetch(endpoint.url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${credentials.authToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(envelope),
+    });
+    if (!response.ok) {
+      throw new Error(`Annotation sync failed (${response.status}).`);
+    }
+    if (
+      generation === inkSyncGeneration &&
+      inkDocument.updatedAt === documentSnapshot.updatedAt
+    ) {
+      setInkSyncStatus("synced", documentSnapshot.updatedAt);
+    } else if (generation === inkSyncGeneration) {
+      scheduleInkSync();
+    }
+  } catch (error) {
+    console.error("Unable to save annotation layer", error);
+    if (generation === inkSyncGeneration) {
+      setInkSyncStatus("error");
+    }
+  }
+}
+
+function renderAllInkLayers() {
+  document.querySelectorAll("#viewer .page").forEach(page => {
+    const pageNumber = page.dataset.pageNumber;
+    const layer = page.querySelector(":scope > .florilegiumInkLayer");
+    if (pageNumber && layer) {
+      renderPageStrokes(layer, pageNumber);
+    }
+  });
+}
+
+async function synchronizeInkDocument(documentId = inkDocumentId) {
+  if (!inkSyncCredentials || !documentId) {
+    setInkSyncStatus("local");
+    return;
+  }
+
+  const generation = inkSyncGeneration;
+  const credentials = inkSyncCredentials;
+  setInkSyncStatus("loading");
+
+  try {
+    const endpoint = await getInkSyncEndpoint(documentId);
+    const response = await fetch(endpoint.url, {
+      headers: { Authorization: `Bearer ${credentials.authToken}` },
+      cache: "no-store",
+    });
+
+    if (response.status === 404) {
+      if (generation === inkSyncGeneration && hasInkStrokes()) {
+        await uploadInkDocument(generation);
+      } else if (generation === inkSyncGeneration) {
+        setInkSyncStatus("empty");
+      }
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`Annotation sync failed (${response.status}).`);
+    }
+
+    const envelope = await response.json();
+    const remoteDocument = await decryptInkDocument(
+      envelope,
+      credentials,
+      endpoint.documentKey
+    );
+    if (!isValidInkDocument(remoteDocument, documentId)) {
+      throw new Error("The saved annotation document is invalid.");
+    }
+    if (generation !== inkSyncGeneration || documentId !== inkDocumentId) {
+      return;
+    }
+
+    if ((remoteDocument.updatedAt || 0) > (inkDocument.updatedAt || 0)) {
+      inkDocument = remoteDocument;
+      cacheInkDocument();
+      document.documentElement.classList.toggle(
+        INK_HIDDEN_CLASS,
+        inkDocument.hidden
+      );
+      renderAllInkLayers();
+      updateInkButtons();
+    } else if ((inkDocument.updatedAt || 0) > (remoteDocument.updatedAt || 0)) {
+      await uploadInkDocument(generation);
+      return;
+    }
+    setInkSyncStatus("synced", Math.max(
+      remoteDocument.updatedAt || 0,
+      inkDocument.updatedAt || 0
+    ));
+  } catch (error) {
+    console.error("Unable to load annotation layer", error);
+    if (generation === inkSyncGeneration) {
+      setInkSyncStatus("error");
     }
   }
 }
@@ -213,6 +407,7 @@ function updateInkButtons() {
   const drawButton = document.getElementById("inkDrawButton");
   const visibilityButton = document.getElementById("inkVisibilityButton");
   const undoButton = document.getElementById("inkUndoButton");
+  const syncButton = document.getElementById("inkSyncButton");
 
   if (drawButton) {
     drawButton.setAttribute("aria-pressed", String(inkDrawingEnabled));
@@ -237,6 +432,21 @@ function updateInkButtons() {
     undoButton.disabled = !hasInkStrokes();
     undoButton.hidden = !hasInkStrokes();
   }
+  if (syncButton) {
+    const titles = {
+      local: "Annotations are saved on this device only",
+      ready: "Permanent annotation sync is ready",
+      loading: "Loading permanent annotations",
+      saving: "Saving annotations",
+      synced: "Annotations are permanently saved",
+      empty: "No permanent annotations for this passphrase yet",
+      error: "Annotation sync needs attention",
+    };
+    syncButton.title = titles[inkSyncStatus] || titles.local;
+    syncButton.setAttribute("aria-label", syncButton.title);
+    syncButton.setAttribute("aria-pressed", String(Boolean(inkSyncCredentials)));
+    syncButton.dataset.syncStatus = inkSyncStatus;
+  }
 }
 
 function setInkDrawing(enabled) {
@@ -244,6 +454,10 @@ function setInkDrawing(enabled) {
   document.documentElement.classList.toggle(INK_DRAWING_CLASS, enabled);
   if (enabled && inkDocument.hidden) {
     setInkVisibility(true);
+  }
+  if (enabled && !inkSyncCredentials && !inkSyncPromptShown) {
+    inkSyncPromptShown = true;
+    window.setTimeout(openInkSyncDialog, 0);
   }
   updateInkButtons();
 }
@@ -287,6 +501,161 @@ function undoLastInkStroke() {
   updateInkButtons();
 }
 
+function formatInkSyncTime(timestamp) {
+  if (!timestamp) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function getInkSyncStatusMessage() {
+  if (!inkSyncCredentials) {
+    return "This drawing layer is currently saved only in this browser.";
+  }
+  if (inkSyncStatus === "loading") {
+    return "Loading the permanent drawing layer…";
+  }
+  if (inkSyncStatus === "saving") {
+    return "Saving encrypted annotations…";
+  }
+  if (inkSyncStatus === "synced") {
+    const time = formatInkSyncTime(inkSyncLastSaved);
+    return time ? `Permanently saved at ${time}.` : "Permanent sync is ready.";
+  }
+  if (inkSyncStatus === "empty") {
+    return "No permanent annotations were found for this passphrase. New drawings will save here.";
+  }
+  if (inkSyncStatus === "error") {
+    return "Could not reach permanent storage. The local copy is safe and will retry.";
+  }
+  return "Permanent sync is ready.";
+}
+
+function updateInkSyncDialog() {
+  const dialog = document.getElementById("inkSyncDialog");
+  if (!dialog) {
+    return;
+  }
+  const status = dialog.querySelector(".florilegiumSyncStatus");
+  const exportButton = dialog.querySelector(".florilegiumSyncExport");
+  if (status) {
+    status.textContent = getInkSyncStatusMessage();
+    status.dataset.syncStatus = inkSyncStatus;
+  }
+  if (exportButton) {
+    exportButton.disabled = !hasInkStrokes();
+  }
+}
+
+function exportInkDocument() {
+  const safeName = (inkDocumentId.split("/").at(-1) || "document")
+    .replace(/\.pdf(?:\?.*)?$/iu, "")
+    .replace(/[^a-z0-9._-]+/giu, "-")
+    .replace(/^-+|-+$/gu, "") || "document";
+  const blob = new Blob([JSON.stringify(inkDocument, null, 2)], {
+    type: "application/json",
+  });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${safeName}-annotations.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+function ensureInkSyncDialog() {
+  const existing = document.getElementById("inkSyncDialog");
+  if (existing) {
+    return existing;
+  }
+
+  const dialog = document.createElement("dialog");
+  dialog.id = "inkSyncDialog";
+  dialog.className = "florilegiumSyncDialog";
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Permanent annotations";
+  const explanation = document.createElement("p");
+  explanation.textContent =
+    "Choose a private passphrase to encrypt and sync your drawing layer. After clearing Safari or using another device, enter the same passphrase to restore it.";
+  const warning = document.createElement("p");
+  warning.className = "florilegiumSyncWarning";
+  warning.textContent =
+    "Save this passphrase in your password manager. Florilegium cannot recover it.";
+
+  const form = document.createElement("form");
+  form.className = "florilegiumSyncForm";
+  const label = document.createElement("label");
+  label.htmlFor = "inkSyncPassphrase";
+  label.textContent = "Sync passphrase";
+  const input = document.createElement("input");
+  input.id = "inkSyncPassphrase";
+  input.type = "password";
+  input.minLength = 12;
+  input.required = true;
+  input.autocomplete = "current-password";
+  input.placeholder = "At least 12 characters";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.textContent = inkSyncCredentials ? "Use passphrase" : "Enable sync";
+  form.append(label, input, submit);
+
+  const status = document.createElement("p");
+  status.className = "florilegiumSyncStatus";
+
+  const actions = document.createElement("div");
+  actions.className = "florilegiumSyncActions";
+  const exportButton = document.createElement("button");
+  exportButton.type = "button";
+  exportButton.className = "florilegiumSyncExport";
+  exportButton.textContent = "Export JSON backup";
+  exportButton.addEventListener("click", exportInkDocument);
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.textContent = "Close";
+  closeButton.addEventListener("click", () => dialog.close());
+  actions.append(exportButton, closeButton);
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    submit.disabled = true;
+    status.textContent = "Preparing encrypted sync…";
+    try {
+      const credentials = await deriveSyncCredentials(input.value);
+      storeSyncCredentials(credentials);
+      input.value = "";
+      submit.textContent = "Use passphrase";
+      await synchronizeInkDocument();
+    } catch (error) {
+      status.textContent = error.message || "Could not enable annotation sync.";
+      status.dataset.syncStatus = "error";
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  dialog.addEventListener("click", event => {
+    if (event.target === dialog) {
+      dialog.close();
+    }
+  });
+  dialog.append(heading, explanation, warning, form, status, actions);
+  document.body.append(dialog);
+  updateInkSyncDialog();
+  return dialog;
+}
+
+function openInkSyncDialog() {
+  const dialog = ensureInkSyncDialog();
+  updateInkSyncDialog();
+  if (!dialog.open) {
+    dialog.showModal();
+  }
+  dialog.querySelector("#inkSyncPassphrase")?.focus();
+}
+
 function addInkControls(target) {
   if (document.getElementById("inkDrawButton")) {
     return;
@@ -317,8 +686,15 @@ function addInkControls(target) {
     label: "Undo last drawing",
     onClick: undoLastInkStroke,
   });
+  const syncButton = createToolbarButton({
+    id: "inkSyncButton",
+    className: "florilegiumReadingButton florilegiumSyncButton",
+    iconName: "cloud",
+    label: "Set up permanent annotation sync",
+    onClick: openInkSyncDialog,
+  });
 
-  target.append(drawButton, visibilityButton, undoButton);
+  target.append(drawButton, visibilityButton, undoButton, syncButton);
 
   const viewer = document.getElementById("viewer");
   if (viewer) {
@@ -330,9 +706,13 @@ function addInkControls(target) {
 
   const initializeForDocument = () => {
     const documentId = getCurrentDocumentId();
+    let documentChanged = false;
     if (documentId !== inkDocumentId) {
+      window.clearTimeout(inkSyncTimer);
+      inkSyncGeneration += 1;
       inkDocumentId = documentId;
       inkDocument = loadInkDocument(documentId);
+      documentChanged = true;
     }
     document.documentElement.classList.toggle(
       INK_HIDDEN_CLASS,
@@ -340,6 +720,9 @@ function addInkControls(target) {
     );
     attachVisibleInkLayers();
     updateInkButtons();
+    if (documentChanged) {
+      synchronizeInkDocument(documentId);
+    }
   };
 
   const eventBus = window.PDFViewerApplication?.eventBus;
@@ -551,3 +934,9 @@ if (document.readyState === "loading") {
 } else {
   addReadingControls();
 }
+
+window.addEventListener("online", () => {
+  if (inkSyncCredentials && inkDocumentId && inkSyncStatus === "error") {
+    synchronizeInkDocument();
+  }
+});
