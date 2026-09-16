@@ -182,6 +182,8 @@ button.florilegiumReadingButton > .florilegiumCustomIcon {
   pointer-events: auto;
   cursor: crosshair;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .florilegiumInkHidden .florilegiumInkLayer {
@@ -190,6 +192,7 @@ button.florilegiumReadingButton > .florilegiumCustomIcon {
 
 .florilegiumInkStroke {
   fill: none;
+  pointer-events: none;
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;

@@ -324,17 +324,23 @@ function clearActiveInkStroke(active, removePath = false) {
   }
 
   activeInkStroke = null;
-  window.removeEventListener("pointermove", active.addPoints, true);
-  window.removeEventListener("pointerup", active.finish, true);
-  window.removeEventListener("pointercancel", active.cancel, true);
-  active.layer.removeEventListener("lostpointercapture", active.cancel);
+  if (active.inputMode === "touch") {
+    window.removeEventListener("touchmove", active.addPoints, true);
+    window.removeEventListener("touchend", active.finish, true);
+    window.removeEventListener("touchcancel", active.cancel, true);
+  } else {
+    window.removeEventListener("pointermove", active.addPoints, true);
+    window.removeEventListener("pointerup", active.finish, true);
+    window.removeEventListener("pointercancel", active.cancel, true);
+    active.layer.removeEventListener("lostpointercapture", active.cancel);
 
-  try {
-    if (active.layer.hasPointerCapture(active.pointerId)) {
-      active.layer.releasePointerCapture(active.pointerId);
+    try {
+      if (active.layer.hasPointerCapture(active.pointerId)) {
+        active.layer.releasePointerCapture(active.pointerId);
+      }
+    } catch {
+      // Mobile Safari can drop capture before dispatching its final event.
     }
-  } catch {
-    // Mobile Safari can drop capture before dispatching its final event.
   }
 
   if (removePath) {
@@ -348,8 +354,37 @@ function cancelActiveInkStroke() {
   }
 }
 
+function createActiveInkStroke(layer, pageNumber, initialPoint) {
+  const stroke = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: Date.now(),
+    color: INK_COLOR,
+    opacity: INK_OPACITY,
+    width: INK_WIDTH,
+    points: initialPoint,
+  };
+  const path = createStrokePath(stroke);
+  layer.append(path);
+  return { layer, pageNumber, stroke, path };
+}
+
+function commitActiveInkStroke(active) {
+  clearActiveInkStroke(active);
+  if (active.stroke.points.length < 4) {
+    active.path.remove();
+    return;
+  }
+  getPageStrokes(active.pageNumber).push(active.stroke);
+  saveInkDocument();
+  updateInkButtons();
+}
+
 function beginInkStroke(event, layer, pageNumber) {
-  if (!inkDrawingEnabled || (event.pointerType === "mouse" && event.button !== 0)) {
+  if (
+    !inkDrawingEnabled ||
+    (event.pointerType === "mouse" && event.button !== 0) ||
+    (event.pointerType === "touch" && "ontouchstart" in window)
+  ) {
     return;
   }
   if (activeInkStroke) {
@@ -357,28 +392,16 @@ function beginInkStroke(event, layer, pageNumber) {
   }
 
   event.preventDefault();
-
-  const stroke = {
-    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    createdAt: Date.now(),
-    color: INK_COLOR,
-    opacity: INK_OPACITY,
-    width: INK_WIDTH,
-    points: pointInLayer(event, layer),
-  };
-  const path = createStrokePath(stroke);
-  layer.append(path);
-
-  const active = {
-    pointerId: event.pointerId,
-    layer,
-    pageNumber,
-    stroke,
-    path,
-    addPoints: null,
-    finish: null,
-    cancel: null,
-  };
+  const active = Object.assign(
+    createActiveInkStroke(layer, pageNumber, pointInLayer(event, layer)),
+    {
+      inputMode: "pointer",
+      pointerId: event.pointerId,
+      addPoints: null,
+      finish: null,
+      cancel: null,
+    }
+  );
 
   active.addPoints = pointerEvent => {
     if (
@@ -389,9 +412,9 @@ function beginInkStroke(event, layer, pageNumber) {
     }
     pointerEvent.preventDefault();
     for (const sample of getInkPointerSamples(pointerEvent)) {
-      stroke.points.push(...pointInLayer(sample, layer));
+      active.stroke.points.push(...pointInLayer(sample, layer));
     }
-    path.setAttribute("d", strokePath(stroke.points));
+    active.path.setAttribute("d", strokePath(active.stroke.points));
   };
 
   active.finish = pointerEvent => {
@@ -402,16 +425,7 @@ function beginInkStroke(event, layer, pageNumber) {
       return;
     }
     active.addPoints(pointerEvent);
-    clearActiveInkStroke(active);
-
-    if (stroke.points.length < 4) {
-      path.remove();
-      return;
-    }
-
-    getPageStrokes(pageNumber).push(stroke);
-    saveInkDocument();
-    updateInkButtons();
+    commitActiveInkStroke(active);
   };
 
   active.cancel = pointerEvent => {
@@ -442,6 +456,81 @@ function beginInkStroke(event, layer, pageNumber) {
   }
 }
 
+function findTouch(event, identifier) {
+  return [...event.changedTouches, ...event.touches].find(
+    touch => touch.identifier === identifier
+  );
+}
+
+function beginInkTouchStroke(event, layer, pageNumber) {
+  if (!inkDrawingEnabled || activeInkStroke || event.changedTouches.length === 0) {
+    return;
+  }
+
+  event.preventDefault();
+  const initialTouch = event.changedTouches[0];
+  const active = Object.assign(
+    createActiveInkStroke(
+      layer,
+      pageNumber,
+      pointInLayer(initialTouch, layer)
+    ),
+    {
+      inputMode: "touch",
+      touchId: initialTouch.identifier,
+      addPoints: null,
+      finish: null,
+      cancel: null,
+    }
+  );
+
+  active.addPoints = touchEvent => {
+    if (activeInkStroke !== active) {
+      return;
+    }
+    const touch = findTouch(touchEvent, active.touchId);
+    if (!touch) {
+      return;
+    }
+    touchEvent.preventDefault();
+    active.stroke.points.push(...pointInLayer(touch, layer));
+    active.path.setAttribute("d", strokePath(active.stroke.points));
+  };
+
+  active.finish = touchEvent => {
+    if (activeInkStroke !== active) {
+      return;
+    }
+    const touch = [...touchEvent.changedTouches].find(
+      item => item.identifier === active.touchId
+    );
+    if (!touch) {
+      return;
+    }
+    touchEvent.preventDefault();
+    active.stroke.points.push(...pointInLayer(touch, layer));
+    active.path.setAttribute("d", strokePath(active.stroke.points));
+    commitActiveInkStroke(active);
+  };
+
+  active.cancel = () => {
+    if (activeInkStroke === active) {
+      clearActiveInkStroke(active, true);
+    }
+  };
+
+  activeInkStroke = active;
+  window.addEventListener("touchmove", active.addPoints, {
+    capture: true,
+    passive: false,
+  });
+  window.addEventListener("touchend", active.finish, {
+    capture: true,
+    passive: false,
+  });
+  window.addEventListener("touchcancel", active.cancel, true);
+}
+
 function attachInkLayer(page) {
   if (!(page instanceof HTMLElement) || page.querySelector(":scope > .florilegiumInkLayer")) {
     return;
@@ -460,6 +549,11 @@ function attachInkLayer(page) {
   layer.addEventListener("pointerdown", event => {
     beginInkStroke(event, layer, pageNumber);
   });
+  layer.addEventListener(
+    "touchstart",
+    event => beginInkTouchStroke(event, layer, pageNumber),
+    { passive: false }
+  );
 
   page.append(layer);
   renderPageStrokes(layer, pageNumber);
