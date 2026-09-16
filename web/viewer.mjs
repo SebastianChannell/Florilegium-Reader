@@ -285,13 +285,12 @@ function undoLastInkStroke() {
   updateInkButtons();
 }
 
-function addInkControls() {
+function addInkControls(target) {
   if (document.getElementById("inkDrawButton")) {
     return;
   }
 
-  const toolbar = document.getElementById("toolbarViewerRight");
-  if (!toolbar) {
+  if (!target) {
     return;
   }
 
@@ -317,9 +316,7 @@ function addInkControls() {
     onClick: undoLastInkStroke,
   });
 
-  toolbar.prepend(undoButton);
-  toolbar.prepend(visibilityButton);
-  toolbar.prepend(drawButton);
+  target.append(drawButton, visibilityButton, undoButton);
 
   const viewer = document.getElementById("viewer");
   if (viewer) {
@@ -529,16 +526,21 @@ function addReadingControls() {
   });
 
   controls.append(label, slider, output);
-  toolbar.prepend(controls);
-  toolbar.prepend(bookButton);
-  toolbar.prepend(invertButton);
+
+  const readingControls = document.createElement("div");
+  readingControls.id = "florilegiumReadingControls";
+  readingControls.className = "florilegiumReadingControls";
+
+  addInkControls(readingControls);
+  readingControls.append(invertButton, bookButton, controls);
+  toolbar.prepend(readingControls);
+  updateInkButtons();
 
   setBookSensitivity(getSavedSensitivity(), false);
   const savedBookMode = getSavedBoolean(BOOK_MODE_STORAGE_KEY);
   const savedInvert = getSavedBoolean(INVERT_STORAGE_KEY);
   setBookMode(savedBookMode, false);
   setInverted(!savedBookMode && savedInvert, false);
-  addInkControls();
 }
 
 if (document.readyState === "loading") {

@@ -48,6 +48,12 @@
   padding-inline: 5px;
 }
 
+.florilegiumReadingControls {
+  display: inline-flex;
+  align-items: center;
+  height: var(--toolbar-height);
+}
+
 /* PDF.js's stock toolbar buttons draw their icons with this pseudo-element. */
 .florilegiumReadingButton::before {
   display: none;
@@ -141,8 +147,40 @@
 }
 
 @media (max-width: 700px) {
+  .florilegiumReadingControls {
+    position: fixed;
+    z-index: 10000;
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left));
+    display: flex;
+    justify-content: center;
+    width: fit-content;
+    max-width: calc(100vw - 20px);
+    height: 48px;
+    margin-inline: auto;
+    padding: 3px;
+    overflow-x: auto;
+    border: 1px solid #4d326e;
+    border-radius: 10px;
+    background: rgba(7, 6, 6, 0.94);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .florilegiumReadingButton {
+    flex: 0 0 auto;
+    min-width: 48px;
+    min-height: 42px;
+    padding-inline: 7px;
+  }
+
+  .florilegiumCustomIcon {
+    font-size: 13px;
+  }
+
   .florilegiumBookModeSlider {
-    width: 62px;
+    width: 58px;
   }
 
   .florilegiumBookModeValue {
