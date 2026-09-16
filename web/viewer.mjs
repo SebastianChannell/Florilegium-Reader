@@ -218,8 +218,9 @@ function updateInkButtons() {
     drawButton.setAttribute("aria-pressed", String(inkDrawingEnabled));
     drawButton.title = inkDrawingEnabled ? "Stop drawing" : "Draw on this PDF";
     drawButton.setAttribute("aria-label", drawButton.title);
-    drawButton.querySelector(".florilegiumCustomIcon").textContent =
-      inkDrawingEnabled ? "Done" : "Draw";
+    drawButton
+      .querySelector(".florilegiumCustomIcon")
+      .classList.toggle("florilegiumIconDone", inkDrawingEnabled);
   }
   if (visibilityButton) {
     visibilityButton.setAttribute("aria-pressed", String(!inkDocument.hidden));
@@ -227,8 +228,9 @@ function updateInkButtons() {
       ? "Show drawing layer"
       : "Hide drawing layer";
     visibilityButton.setAttribute("aria-label", visibilityButton.title);
-    visibilityButton.querySelector(".florilegiumCustomIcon").textContent =
-      inkDocument.hidden ? "Show" : "Hide";
+    visibilityButton
+      .querySelector(".florilegiumCustomIcon")
+      .classList.toggle("florilegiumIconHidden", inkDocument.hidden);
     visibilityButton.hidden = !hasInkStrokes();
   }
   if (undoButton) {
@@ -297,21 +299,21 @@ function addInkControls(target) {
   const drawButton = createToolbarButton({
     id: "inkDrawButton",
     className: "florilegiumReadingButton florilegiumInkButton",
-    iconText: "Draw",
+    iconName: "draw",
     label: "Draw on this PDF",
     onClick: () => setInkDrawing(!inkDrawingEnabled),
   });
   const visibilityButton = createToolbarButton({
     id: "inkVisibilityButton",
     className: "florilegiumReadingButton florilegiumInkButton",
-    iconText: "Hide",
+    iconName: "visibility",
     label: "Hide drawing layer",
     onClick: () => setInkVisibility(inkDocument.hidden),
   });
   const undoButton = createToolbarButton({
     id: "inkUndoButton",
     className: "florilegiumReadingButton florilegiumInkButton",
-    iconText: "Undo",
+    iconName: "undo",
     label: "Undo last drawing",
     onClick: undoLastInkStroke,
   });
@@ -448,7 +450,7 @@ function setBookMode(isActive, save = true) {
   }
 }
 
-function createToolbarButton({ id, className, iconText, label, onClick }) {
+function createToolbarButton({ id, className, iconName, label, onClick }) {
   const button = document.createElement("button");
   button.id = id;
   button.className = `toolbarButton ${className}`;
@@ -459,9 +461,8 @@ function createToolbarButton({ id, className, iconText, label, onClick }) {
   button.setAttribute("aria-pressed", "false");
 
   const icon = document.createElement("span");
-  icon.className = "florilegiumCustomIcon";
+  icon.className = `florilegiumCustomIcon florilegiumIcon-${iconName}`;
   icon.setAttribute("aria-hidden", "true");
-  icon.textContent = iconText;
   button.append(icon);
   button.addEventListener("click", onClick);
   return button;
@@ -480,7 +481,7 @@ function addReadingControls() {
   const invertButton = createToolbarButton({
     id: "invertColorsButton",
     className: "florilegiumReadingButton florilegiumInvertButton",
-    iconText: "Invert",
+    iconName: "invert",
     label: "Invert PDF colors",
     onClick: () => {
       setInverted(!document.documentElement.classList.contains(INVERT_CLASS));
@@ -490,7 +491,7 @@ function addReadingControls() {
   const bookButton = createToolbarButton({
     id: "bookModeButton",
     className: "florilegiumReadingButton florilegiumBookModeButton",
-    iconText: "Book",
+    iconName: "book",
     label: "Scanned book mode",
     onClick: () => {
       setBookMode(!document.documentElement.classList.contains(BOOK_MODE_CLASS));
