@@ -83,6 +83,52 @@
   text-align: end;
 }
 
+/*
+ * A small, non-destructive drawing layer for reading marks. Strokes are kept
+ * outside the PDF and saved per document in this browser.
+ */
+.florilegiumInkLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.florilegiumInkDrawing .florilegiumInkLayer {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.florilegiumInkHidden .florilegiumInkLayer {
+  display: none;
+}
+
+.florilegiumInkStroke {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.florilegiumInkButton[aria-pressed="true"] .florilegiumCustomIcon {
+  color: #a77aeb;
+}
+
+.florilegiumInkButton:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* The sidecar layer replaces PDF.js's full editor suite in this reader. */
+#editorModeButtons,
+#editorModeSeparator {
+  display: none !important;
+}
+
 @media (max-width: 700px) {
   .florilegiumBookModeSlider {
     width: 62px;
@@ -97,5 +143,9 @@
   .florilegiumInvertColors .pdfViewer .page,
   .florilegiumBookMode .pdfViewer .page {
     filter: none;
+  }
+
+  .florilegiumInkLayer {
+    display: none;
   }
 }
