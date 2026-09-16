@@ -218,6 +218,8 @@ function updateInkButtons() {
     drawButton.setAttribute("aria-pressed", String(inkDrawingEnabled));
     drawButton.title = inkDrawingEnabled ? "Stop drawing" : "Draw on this PDF";
     drawButton.setAttribute("aria-label", drawButton.title);
+    drawButton.querySelector(".florilegiumCustomIcon").textContent =
+      inkDrawingEnabled ? "Done" : "Draw";
   }
   if (visibilityButton) {
     visibilityButton.setAttribute("aria-pressed", String(!inkDocument.hidden));
@@ -225,9 +227,13 @@ function updateInkButtons() {
       ? "Show drawing layer"
       : "Hide drawing layer";
     visibilityButton.setAttribute("aria-label", visibilityButton.title);
+    visibilityButton.querySelector(".florilegiumCustomIcon").textContent =
+      inkDocument.hidden ? "Show" : "Hide";
+    visibilityButton.hidden = !hasInkStrokes();
   }
   if (undoButton) {
     undoButton.disabled = !hasInkStrokes();
+    undoButton.hidden = !hasInkStrokes();
   }
 }
 
@@ -292,21 +298,21 @@ function addInkControls() {
   const drawButton = createToolbarButton({
     id: "inkDrawButton",
     className: "florilegiumReadingButton florilegiumInkButton",
-    iconText: "✎",
+    iconText: "Draw",
     label: "Draw on this PDF",
     onClick: () => setInkDrawing(!inkDrawingEnabled),
   });
   const visibilityButton = createToolbarButton({
     id: "inkVisibilityButton",
     className: "florilegiumReadingButton florilegiumInkButton",
-    iconText: "◉",
+    iconText: "Hide",
     label: "Hide drawing layer",
     onClick: () => setInkVisibility(inkDocument.hidden),
   });
   const undoButton = createToolbarButton({
     id: "inkUndoButton",
     className: "florilegiumReadingButton florilegiumInkButton",
-    iconText: "↶",
+    iconText: "Undo",
     label: "Undo last drawing",
     onClick: undoLastInkStroke,
   });
@@ -477,7 +483,7 @@ function addReadingControls() {
   const invertButton = createToolbarButton({
     id: "invertColorsButton",
     className: "florilegiumReadingButton florilegiumInvertButton",
-    iconText: "◐",
+    iconText: "Invert",
     label: "Invert PDF colors",
     onClick: () => {
       setInverted(!document.documentElement.classList.contains(INVERT_CLASS));
@@ -487,7 +493,7 @@ function addReadingControls() {
   const bookButton = createToolbarButton({
     id: "bookModeButton",
     className: "florilegiumReadingButton florilegiumBookModeButton",
-    iconText: "Aa",
+    iconText: "Book",
     label: "Scanned book mode",
     onClick: () => {
       setBookMode(!document.documentElement.classList.contains(BOOK_MODE_CLASS));
