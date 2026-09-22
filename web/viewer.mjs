@@ -563,6 +563,32 @@ function attachVisibleInkLayers() {
   document.querySelectorAll("#viewer .page").forEach(attachInkLayer);
 }
 
+function attachAddedInkLayers(mutations) {
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (node.matches(".page")) {
+        attachInkLayer(node);
+      }
+      node.querySelectorAll?.(".page").forEach(attachInkLayer);
+    }
+  }
+}
+
+function attachRenderedInkLayer({ pageNumber } = {}) {
+  if (!pageNumber) {
+    return;
+  }
+  const page = document.querySelector(
+    `#viewer .page[data-page-number="${CSS.escape(String(pageNumber))}"]`
+  );
+  if (page) {
+    attachInkLayer(page);
+  }
+}
+
 function hasInkStrokes() {
   return Object.values(inkDocument.pages).some(strokes => strokes.length > 0);
 }
@@ -865,7 +891,7 @@ function addInkControls(target) {
 
   const viewer = document.getElementById("viewer");
   if (viewer) {
-    new MutationObserver(attachVisibleInkLayers).observe(viewer, {
+    new MutationObserver(attachAddedInkLayers).observe(viewer, {
       childList: true,
       subtree: true,
     });
@@ -895,7 +921,7 @@ function addInkControls(target) {
 
   const eventBus = window.PDFViewerApplication?.eventBus;
   eventBus?.on("documentloaded", initializeForDocument);
-  eventBus?.on("pagerendered", attachVisibleInkLayers);
+  eventBus?.on("pagerendered", attachRenderedInkLayer);
   initializeForDocument();
 }
 

@@ -514,7 +514,7 @@ const calcRound = function () {
   const isAndroid = /Android/.test(userAgent);
   const isIOS = /\b(?:iPad|iPhone|iPod)(?=;)/.test(userAgent) || platform === "MacIntel" && maxTouchPoints > 1;
   if (isIOS || isAndroid) {
-    compatParams.set("maxCanvasPixels", 5242880);
+    compatParams.set("maxCanvasPixels", 3145728);
   }
   if (isAndroid) {
     compatParams.set("useSystemFonts", false);
@@ -14532,7 +14532,7 @@ class PDFPageView extends BasePDFPageView {
 
 
 
-const DEFAULT_CACHE_SIZE = 10;
+const DEFAULT_CACHE_SIZE = compatParams.has("maxCanvasPixels") ? 5 : 10;
 const PagesCountLimit = {
   FORCE_SCROLL_MODE_PAGE: 10000,
   FORCE_LAZY_PAGE_INIT: 5000,
