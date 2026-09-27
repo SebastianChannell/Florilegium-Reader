@@ -24,6 +24,7 @@ const INK_WIDTH = 4;
 
 let inkDocument = createEmptyInkDocument();
 let inkDocumentId = "";
+let inkLegacyDocumentId = "";
 let inkDrawingEnabled = false;
 let activeInkStroke = null;
 let inkSyncCredentials = loadSyncCredentials();
@@ -52,7 +53,7 @@ function hashString(value) {
   return (hash >>> 0).toString(36);
 }
 
-function getCurrentDocumentId() {
+function getCurrentDocumentSourceId() {
   const fileParameter = new URL(window.location.href).searchParams.get("file");
   const applicationUrl = window.PDFViewerApplication?.url;
   return String(applicationUrl || fileParameter || document.title || "document")
@@ -60,19 +61,63 @@ function getCurrentDocumentId() {
     .trim();
 }
 
+function getCurrentDocumentIds() {
+  const legacyDocumentId = getCurrentDocumentSourceId();
+  let documentId = legacyDocumentId;
+
+  try {
+    const url = new URL(legacyDocumentId);
+    // Librarium adds ?v=<content hash> only to invalidate browser caches. It
+    // must not create a brand-new annotation document every time the PDF is
+    // refreshed or re-uploaded.
+    url.searchParams.delete("v");
+    url.hash = "";
+    documentId = url.toString();
+  } catch {
+    // Non-URL document identifiers are already stable.
+  }
+
+  return {
+    documentId,
+    legacyDocumentId: legacyDocumentId === documentId ? "" : legacyDocumentId,
+  };
+}
+
 function getInkStorageKey(documentId = inkDocumentId) {
   return `${INK_STORAGE_PREFIX}${hashString(documentId)}`;
 }
 
-function loadInkDocument(documentId) {
+function readInkDocument(documentId) {
   try {
     const saved = JSON.parse(localStorage.getItem(getInkStorageKey(documentId)));
-    if (isValidInkDocument(saved, documentId)) {
-      return saved;
-    }
+    return isValidInkDocument(saved, documentId) ? saved : null;
   } catch {
-    // Start with an empty layer if local storage is unavailable or invalid.
+    return null;
   }
+}
+
+function loadInkDocument(documentId, legacyDocumentId = "") {
+  const saved = readInkDocument(documentId);
+  if (saved) {
+    return saved;
+  }
+
+  if (legacyDocumentId && legacyDocumentId !== documentId) {
+    const legacy = readInkDocument(legacyDocumentId);
+    if (legacy) {
+      const migrated = { ...legacy, documentId };
+      try {
+        localStorage.setItem(
+          getInkStorageKey(documentId),
+          JSON.stringify(migrated)
+        );
+      } catch {
+        // The in-memory migrated layer still works if storage is unavailable.
+      }
+      return migrated;
+    }
+  }
+
   return createEmptyInkDocument(documentId);
 }
 
@@ -142,11 +187,14 @@ function scheduleInkSync() {
   }, INK_SYNC_DELAY);
 }
 
-async function getInkSyncEndpoint(documentId = inkDocumentId) {
+async function getInkSyncEndpoint(
+  documentId = inkDocumentId,
+  credentials = inkSyncCredentials
+) {
   const documentKey = await getRemoteDocumentKey(documentId);
   return {
     documentKey,
-    url: `/api/annotations/${inkSyncCredentials.vaultId}/${documentKey}`,
+    url: `/api/annotations/${credentials.vaultId}/${documentKey}`,
   };
 }
 
@@ -161,7 +209,7 @@ async function uploadInkDocument(generation = inkSyncGeneration) {
   setInkSyncStatus("saving");
 
   try {
-    const endpoint = await getInkSyncEndpoint(documentId);
+    const endpoint = await getInkSyncEndpoint(documentId, credentials);
     const envelope = await encryptInkDocument(
       documentSnapshot,
       credentials,
@@ -215,13 +263,28 @@ async function synchronizeInkDocument(documentId = inkDocumentId) {
   setInkSyncStatus("loading");
 
   try {
-    const endpoint = await getInkSyncEndpoint(documentId);
-    const response = await fetch(endpoint.url, {
-      headers: { Authorization: `Bearer ${credentials.authToken}` },
-      cache: "no-store",
-    });
+    const candidateDocumentIds = [documentId];
+    if (inkLegacyDocumentId && inkLegacyDocumentId !== documentId) {
+      candidateDocumentIds.push(inkLegacyDocumentId);
+    }
 
-    if (response.status === 404) {
+    let endpoint = null;
+    let response = null;
+    let remoteDocumentId = documentId;
+
+    for (const candidateDocumentId of candidateDocumentIds) {
+      endpoint = await getInkSyncEndpoint(candidateDocumentId, credentials);
+      response = await fetch(endpoint.url, {
+        headers: { Authorization: `Bearer ${credentials.authToken}` },
+        cache: "no-store",
+      });
+      if (response.status !== 404) {
+        remoteDocumentId = candidateDocumentId;
+        break;
+      }
+    }
+
+    if (!response || response.status === 404) {
       if (generation === inkSyncGeneration && hasInkStrokes()) {
         await uploadInkDocument(generation);
       } else if (generation === inkSyncGeneration) {
@@ -234,13 +297,16 @@ async function synchronizeInkDocument(documentId = inkDocumentId) {
     }
 
     const envelope = await response.json();
-    const remoteDocument = await decryptInkDocument(
+    let remoteDocument = await decryptInkDocument(
       envelope,
       credentials,
       endpoint.documentKey
     );
-    if (!isValidInkDocument(remoteDocument, documentId)) {
+    if (!isValidInkDocument(remoteDocument, remoteDocumentId)) {
       throw new Error("The saved annotation document is invalid.");
+    }
+    if (remoteDocumentId !== documentId) {
+      remoteDocument = { ...remoteDocument, documentId };
     }
     if (generation !== inkSyncGeneration || documentId !== inkDocumentId) {
       return;
@@ -259,6 +325,14 @@ async function synchronizeInkDocument(documentId = inkDocumentId) {
       await uploadInkDocument(generation);
       return;
     }
+
+    if (remoteDocumentId !== documentId) {
+      // Migrate a pre-canonical cache-busted annotation object to the stable
+      // document key so future ?v= changes cannot hide it again.
+      await uploadInkDocument(generation);
+      return;
+    }
+
     setInkSyncStatus("synced", Math.max(
       remoteDocument.updatedAt || 0,
       inkDocument.updatedAt || 0
@@ -916,14 +990,15 @@ function addInkControls(target) {
   }
 
   const initializeForDocument = () => {
-    const documentId = getCurrentDocumentId();
+    const { documentId, legacyDocumentId } = getCurrentDocumentIds();
+    inkLegacyDocumentId = legacyDocumentId;
     let documentChanged = false;
     if (documentId !== inkDocumentId) {
       cancelActiveInkStroke();
       window.clearTimeout(inkSyncTimer);
       inkSyncGeneration += 1;
       inkDocumentId = documentId;
-      inkDocument = loadInkDocument(documentId);
+      inkDocument = loadInkDocument(documentId, legacyDocumentId);
       documentChanged = true;
     }
     document.documentElement.classList.toggle(
