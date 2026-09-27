@@ -563,18 +563,36 @@ function attachVisibleInkLayers() {
   document.querySelectorAll("#viewer .page").forEach(attachInkLayer);
 }
 
-function attachAddedInkLayers(mutations) {
+function attachChangedInkLayers(mutations) {
+  const pages = new Set();
+
   for (const mutation of mutations) {
+    const target = mutation.target;
+    if (target instanceof Element) {
+      const targetPage = target.matches(".page")
+        ? target
+        : target.closest(".page");
+      if (targetPage) {
+        pages.add(targetPage);
+      }
+    }
+
     for (const node of mutation.addedNodes) {
       if (!(node instanceof Element)) {
         continue;
       }
-      if (node.matches(".page")) {
-        attachInkLayer(node);
+
+      const containingPage = node.matches(".page")
+        ? node
+        : node.closest(".page");
+      if (containingPage) {
+        pages.add(containingPage);
       }
-      node.querySelectorAll?.(".page").forEach(attachInkLayer);
+      node.querySelectorAll?.(".page").forEach(page => pages.add(page));
     }
   }
+
+  pages.forEach(attachInkLayer);
 }
 
 function attachRenderedInkLayer({ pageNumber } = {}) {
@@ -891,7 +909,7 @@ function addInkControls(target) {
 
   const viewer = document.getElementById("viewer");
   if (viewer) {
-    new MutationObserver(attachAddedInkLayers).observe(viewer, {
+    new MutationObserver(attachChangedInkLayers).observe(viewer, {
       childList: true,
       subtree: true,
     });
