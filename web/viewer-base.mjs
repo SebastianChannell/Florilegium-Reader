@@ -610,7 +610,7 @@ const defaultOptions = {
   annotationEditorMode: {
     // Read-only Florilegium reader: do not initialize PDF.js editing tools.
     value: -1,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+    kind: OptionKind.VIEWER
   },
   annotationMode: {
     value: 2,
@@ -814,7 +814,9 @@ const defaultOptions = {
   },
   disableAutoFetch: {
     value: false,
-    kind: OptionKind.API + OptionKind.PREFERENCE
+    // Keep the mobile compatibility override from being replaced by stored
+    // PDF.js preferences during application startup.
+    kind: OptionKind.API
   },
   disableFontFace: {
     value: false,
