@@ -514,7 +514,12 @@ const calcRound = function () {
   const isAndroid = /Android/.test(userAgent);
   const isIOS = /\b(?:iPad|iPhone|iPod)(?=;)/.test(userAgent) || platform === "MacIntel" && maxTouchPoints > 1;
   if (isIOS || isAndroid) {
-    compatParams.set("maxCanvasPixels", 3145728);
+    // Mobile Safari/Chrome can reload the tab when large PDF canvases exhaust
+    // the browser's memory budget. Favor stability over maximum raster size.
+    compatParams.set("maxCanvasPixels", 2097152);
+    // Avoid eagerly initializing every page in long books. Pages are loaded
+    // as they are needed, which substantially lowers memory/network pressure.
+    compatParams.set("disableAutoFetch", true);
   }
   if (isAndroid) {
     compatParams.set("useSystemFonts", false);
@@ -603,7 +608,8 @@ const defaultOptions = {
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   annotationEditorMode: {
-    value: 0,
+    // Read-only Florilegium reader: do not initialize PDF.js editing tools.
+    value: -1,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   annotationMode: {
@@ -14532,7 +14538,7 @@ class PDFPageView extends BasePDFPageView {
 
 
 
-const DEFAULT_CACHE_SIZE = compatParams.has("maxCanvasPixels") ? 5 : 10;
+const DEFAULT_CACHE_SIZE = compatParams.has("maxCanvasPixels") ? 3 : 10;
 const PagesCountLimit = {
   FORCE_SCROLL_MODE_PAGE: 10000,
   FORCE_LAZY_PAGE_INIT: 5000,
