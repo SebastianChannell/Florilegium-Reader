@@ -155,11 +155,11 @@ async function start() {
 
   // Reject out-of-order text mentions. Use interpolated page positions for
   // occasional OCR misses, and mark those links as approximate.
-  let last = 1;
+  let last = null;
   const confirmed = new Map();
   for (let i = 0; i < days.length; i++) {
     const candidate = candidates[days[i].id];
-    if (candidate && candidate >= last && candidate - last < 14) {
+    if (candidate && (last === null || (candidate >= last && candidate - last < 14))) {
       confirmed.set(i, candidate);
       last = candidate;
     }
