@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070606">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="A date-by-date reading calendar for Little Pictorial Lives of the Saints.">
+  <title>Daily Lives of the Saints · Sacrum Florilegium</title>
+  <link rel="stylesheet" href="./saints.css">
+  <script type="module" src="./saints.mjs"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <a class="brand" href="https://librarium.sacrumflorilegium.com/">Sacrum Florilegium · Librarium</a>
+      <h1>Daily Lives of the Saints</h1>
+      <p>Little Pictorial Lives of the Saints <span class="muted">· 1894 edition</span></p>
+    </header>
+    <section class="today" aria-labelledby="today-label">
+      <p class="eyebrow" id="today-label">Hodie · Today's Reading</p>
+      <h2 id="today-date">Today</h2>
+      <a id="today-link" class="primary-link" href="#" aria-disabled="true">Preparing today's page… <span aria-hidden="true">→</span></a>
+    </section>
+    <div id="index-status" class="status" role="status" aria-live="polite">Preparing the daily index from the book's searchable text…</div>
+    <nav class="jump" aria-label="Jump to month" id="month-jump"></nav>
+    <section id="months" aria-label="Daily readings"></section>
+    <footer>
+      <p>Dates follow the entries in this historical book, not the current liturgical calendar.</p>
+      <p><a href="https://librarium.sacrumflorilegium.com/">← Librarium</a> <span aria-hidden="true">✠</span> T.A.D.M.N.</p>
+    </footer>
+  </main>
+</body>
+</html>
