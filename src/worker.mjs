@@ -1,5 +1,11 @@
 const ASSETS_ORIGIN = "https://assets.sacrumflorilegium.com";
 
+// Keep the original archival PDF intact. For particularly demanding scanned
+// editions, a separately validated lower-memory PDF may be served instead.
+const READER_VARIANTS = new Map([
+  ["pdfs/viva-el-rey.pdf", "reader-optimized/viva-el-rey.pdf"],
+]);
+
 function pdfKey(pathname) {
   try {
     const key = decodeURIComponent(pathname.slice(1));
@@ -40,9 +46,13 @@ async function servePdf(request, env, url) {
   const key = pdfKey(url.pathname);
   if (!key) return new Response("Not Found", { status: 404 });
 
+  const variant = READER_VARIANTS.get(key);
+  const selectedKey = variant && await env.LIBRARY_BUCKET.head(variant)
+    ? variant
+    : key;
   const object = request.method === "HEAD"
-    ? await env.LIBRARY_BUCKET.head(key)
-    : await env.LIBRARY_BUCKET.get(key, { range: request.headers });
+    ? await env.LIBRARY_BUCKET.head(selectedKey)
+    : await env.LIBRARY_BUCKET.get(selectedKey, { range: request.headers });
   if (!object) return new Response("Not Found", { status: 404 });
 
   const headers = new Headers();
@@ -51,7 +61,7 @@ async function servePdf(request, env, url) {
   headers.set("Content-Disposition", "inline");
   headers.set("Accept-Ranges", "bytes");
   headers.set("ETag", object.httpEtag);
-  headers.set("Cache-Control", "public, max-age=300");
+  headers.set("Cache-Control", selectedKey === key ? "public, max-age=300" : "no-store");
   headers.set("X-Content-Type-Options", "nosniff");
 
   if (request.method === "HEAD") {
