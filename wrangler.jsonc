@@ -5,7 +5,7 @@
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
-    "run_worker_first": ["/web/viewer.html", "/pdfs/*"]
+    "run_worker_first": ["/web/viewer", "/web/viewer.html", "/pdfs/*"]
   },
   "r2_buckets": [
     { "binding": "LIBRARY_BUCKET", "bucket_name": "sacrum-assets" }
