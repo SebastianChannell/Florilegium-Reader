@@ -46,3 +46,45 @@ jobs:
           file /tmp/viva-el-rey.pdf || true
           pdfinfo /tmp/viva-el-rey.pdf | head -24 || true
           echo "::endgroup::"
+
+      - name: Inspect PDF.js in a real browser
+        shell: bash
+        run: |
+          set -e
+          npm install --prefix /tmp/reader-browser playwright
+          /tmp/reader-browser/node_modules/.bin/playwright install --with-deps chromium
+          node --input-type=module <<'NODE'
+          import { chromium } from '/tmp/reader-browser/node_modules/playwright/index.mjs';
+          const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+          for (const file of [
+            "https://assets.sacrumflorilegium.com/pdfs/viva-el-rey.pdf",
+            "https://reader.sacrumflorilegium.com/pdfs/viva-el-rey.pdf",
+          ]) {
+            const url = "https://reader.sacrumflorilegium.com/web/viewer.html?file=" + encodeURIComponent(file);
+            const page = await browser.newPage();
+            console.log("=== TEST", file, "===");
+            page.on("console", message => { if (message.type() === "error" || message.type() === "warning") console.log("BROWSER-CONSOLE:", message.type(), message.text().slice(0,600)); });
+            page.on("pageerror", error => console.log("BROWSER-ERROR:", error.message));
+            page.on("requestfailed", request => console.log("FAILED-REQUEST:", request.url().slice(0,220), request.failure()?.errorText));
+            page.on("response", response => {
+              if (response.url().includes("viva-el-rey") || response.url().includes("/web/viewer"))
+                console.log("RESPONSE:", response.status(), response.url().slice(0,230));
+            });
+            try {
+              const nav = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+              console.log("NAV:", nav?.status(), page.url());
+              await page.waitForTimeout(12000);
+              const state = await page.evaluate(() => ({
+                url: location.href,
+                documentTitle: document.title,
+                pages: globalThis.PDFViewerApplication?.pdfDocument?.numPages ?? null,
+                loading: globalThis.PDFViewerApplication?.loadingBar?.percent ?? null,
+                errorText: document.querySelector("#errorWrapper")?.innerText?.slice(0,1000) ?? null,
+                viewerPages: document.querySelectorAll(".page").length,
+              }));
+              console.log("READER-STATE:", JSON.stringify(state));
+            } catch (error) { console.log("TEST-ERROR:", error.message); }
+            await page.close();
+          }
+          await browser.close();
+          NODE
