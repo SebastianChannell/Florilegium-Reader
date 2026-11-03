@@ -80,3 +80,24 @@ test("canonical extensionless viewer route also rewrites old PDF asset links", a
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.equal(new URL(response.headers.get("location")).searchParams.get("file"), "https://reader.example/pdfs/viva-el-rey.pdf?v=old");
 });
+
+test("preserves original R2 object and prefers optimized reader derivative when available", async () => {
+  const keys = [];
+  const env = makeEnv();
+  env.LIBRARY_BUCKET.head = key => key === "reader-optimized/viva-el-rey.pdf" ? objectWithBody() : null;
+  env.LIBRARY_BUCKET.get = key => { keys.push(key); return objectWithBody(); };
+  const response = await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf"), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual(keys, ["reader-optimized/viva-el-rey.pdf"]);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+});
+
+test("uses archival PDF if the optimized reader copy has not been uploaded", async () => {
+  const keys = [];
+  const env = makeEnv();
+  env.LIBRARY_BUCKET.head = key => key === "reader-optimized/viva-el-rey.pdf" ? null : objectWithBody();
+  env.LIBRARY_BUCKET.get = key => { keys.push(key); return objectWithBody(); };
+  const response = await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf"), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual(keys, ["pdfs/viva-el-rey.pdf"]);
+});
