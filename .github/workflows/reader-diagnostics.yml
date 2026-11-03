@@ -1,0 +1,48 @@
+name: Reader diagnostics
+
+on:
+  push:
+    paths:
+      - "src/worker.mjs"
+      - "wrangler.jsonc"
+      - "test/**"
+      - ".github/workflows/reader-diagnostics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run reader tests
+        run: node --test test/worker.test.mjs
+      - name: Check live viewer and PDF delivery
+        shell: bash
+        run: |
+          set -u
+          ASSET="https://assets.sacrumflorilegium.com/pdfs/viva-el-rey.pdf"
+          READER="https://reader.sacrumflorilegium.com/pdfs/viva-el-rey.pdf"
+          VIEWER="https://reader.sacrumflorilegium.com/web/viewer.html?file=https%3A%2F%2Fassets.sacrumflorilegium.com%2Fpdfs%2Fviva-el-rey.pdf"
+          for item in asset reader; do
+            if [ "$item" = "asset" ]; then url="$ASSET"; else url="$READER"; fi
+            echo "::group::$item: HEAD"
+            curl --max-time 25 -sSI "$url" | grep -Ei '^(HTTP/|content-type:|content-length:|content-range:|accept-ranges:|etag:|location:|access-control-allow-origin:|cf-ray:)'
+            echo "::endgroup::"
+            echo "::group::$item: range 0-1023"
+            curl --max-time 25 -sS -D "/tmp/$item-range.headers" -H 'Range: bytes=0-1023' -o "/tmp/$item-range.body" "$url" || true
+            cat "/tmp/$item-range.headers" | grep -Ei '^(HTTP/|content-type:|content-length:|content-range:|accept-ranges:|etag:|location:|access-control-allow-origin:|cf-ray:)' || true
+            echo "bytes received: $(wc -c < "/tmp/$item-range.body")"
+            echo "first bytes: $(od -An -tx1 -N16 "/tmp/$item-range.body")"
+            echo "::endgroup::"
+          done
+          echo "::group::Viewer legacy link redirect"
+          curl --max-time 25 -sSI "$VIEWER" | grep -Ei '^(HTTP/|content-type:|content-length:|location:|cf-ray:)' || true
+          echo "::endgroup::"
+          echo "::group::PDF file integrity"
+          curl --max-time 60 -sSL -o /tmp/viva-el-rey.pdf "$ASSET" || true
+          file /tmp/viva-el-rey.pdf || true
+          pdfinfo /tmp/viva-el-rey.pdf | head -24 || true
+          echo "::endgroup::"
