@@ -71,3 +71,12 @@ test("open-ended and suffix byte ranges are returned correctly", async () => {
   assert.equal(suffix.headers.get("Content-Range"), "bytes 900-999/1000");
   assert.equal(suffix.headers.get("Content-Length"), "100");
 });
+
+test("canonical extensionless viewer route also rewrites old PDF asset links", async () => {
+  const legacy = "https://assets.sacrumflorilegium.com/pdfs/viva-el-rey.pdf?v=old";
+  const viewer = "https://reader.example/web/viewer?file=" + encodeURIComponent(legacy);
+  const response = await worker.fetch(new Request(viewer), makeEnv());
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(new URL(response.headers.get("location")).searchParams.get("file"), "https://reader.example/pdfs/viva-el-rey.pdf?v=old");
+});
