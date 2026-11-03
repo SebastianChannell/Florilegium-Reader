@@ -56,11 +56,17 @@ async function servePdf(request, env, url) {
   if (!("body" in object)) return new Response(null, { status: 412, headers });
 
   let status = 200;
-  if (object.range) {
-    const { offset, length } = object.range;
-    if (Number.isInteger(offset) && Number.isInteger(length) && length > 0) {
-      headers.set("Content-Range", `bytes ${offset}-${offset + length - 1}/${object.size}`);
-      headers.set("Content-Length", String(length));
+  if (request.headers.has("Range") && object.range) {
+    const { offset, length, suffix } = object.range;
+    const start = Number.isInteger(suffix)
+      ? Math.max(0, object.size - suffix)
+      : (offset ?? 0);
+    const bytes = Number.isInteger(suffix)
+      ? Math.min(suffix, object.size)
+      : Math.min(length ?? (object.size - start), object.size - start);
+    if (Number.isInteger(start) && Number.isInteger(bytes) && bytes > 0 && start >= 0) {
+      headers.set("Content-Range", `bytes ${start}-${start + bytes - 1}/${object.size}`);
+      headers.set("Content-Length", String(bytes));
       status = 206;
     }
   }
