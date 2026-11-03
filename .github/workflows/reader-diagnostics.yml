@@ -47,6 +47,23 @@ jobs:
           pdfinfo /tmp/viva-el-rey.pdf | head -24 || true
           echo "::endgroup::"
 
+      - name: Inspect embedded image formats in the PDF
+        shell: bash
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils
+          curl --max-time 60 -fsSL -o /tmp/viva-el-rey.pdf "https://assets.sacrumflorilegium.com/pdfs/viva-el-rey.pdf"
+          echo "=== PDF metadata ==="
+          pdfinfo /tmp/viva-el-rey.pdf | head -35
+          echo "=== First 80 embedded images ==="
+          pdfimages -f 1 -l 8 -list /tmp/viva-el-rey.pdf | head -85
+          echo "=== Image codec totals ==="
+          pdfimages -list /tmp/viva-el-rey.pdf | awk 'NR>2 { codecs[$9]++; maxwidth=($4>maxwidth?$4:maxwidth); maxheight=($5>maxheight?$5:maxheight) } END {for(k in codecs) print k,codecs[k];print "MAX_DIMENSIONS",maxwidth,maxheight}'
+          echo "=== Can Poppler rasterize page one? ==="
+          pdftoppm -f 1 -singlefile -scale-to 500 -png /tmp/viva-el-rey.pdf /tmp/viva-el-rey-firstpage
+          file /tmp/viva-el-rey-firstpage.png
+
       - name: Inspect PDF.js in a real browser
         shell: bash
         run: |
@@ -82,7 +99,13 @@ jobs:
                 errorText: document.querySelector("#errorWrapper")?.innerText?.slice(0,1000) ?? null,
                 viewerPages: document.querySelectorAll(".page").length,
               }));
-              console.log("READER-STATE:", JSON.stringify(state));
+              const rendered = await page.evaluate(() => {
+                const view=globalThis.PDFViewerApplication?.pdfViewer?.getPageView(0);
+                const el=document.querySelector(".page");
+                return { state:view?.renderingState,canvas:[...(el?.querySelectorAll("canvas")||[])].map(c=>[c.width,c.height]),loadingIcon:!!el?.querySelector(".loadingIcon") };
+              });
+              console.log("READER-STATE:", JSON.stringify({...state,...rendered}));
+              if (state.pages !== 65 || rendered.state !== 3 || !rendered.canvas.length) process.exitCode = 1;
             } catch (error) { console.log("TEST-ERROR:", error.message); }
             await page.close();
           }
@@ -119,8 +142,25 @@ jobs:
                 errorText: document.querySelector("#errorWrapper")?.innerText?.slice(0,500) ?? null,
                 renderedPages: document.querySelectorAll(".page").length,
               }));
-              console.log("WEBKIT-STATE:", JSON.stringify(result));
-              if (result.pages !== 65) process.exitCode = 1;
+              const render = await page.evaluate(() => {
+                const app = globalThis.PDFViewerApplication;
+                const views = [0,1].map(i => {
+                  const v = app?.pdfViewer?.getPageView(i);
+                  const el = document.querySelectorAll(".page")[i];
+                  const canvases = [...(el?.querySelectorAll("canvas") || [])];
+                  return {
+                    renderingState: v?.renderingState,
+                    visiblePage: !!el && !!el.getBoundingClientRect().height,
+                    pageClass: el?.className,
+                    hasLoadingIcon: !!el?.querySelector(".loadingIcon"),
+                    canvas: canvases.map(c => ({ width:c.width, height:c.height, cssWidth:c.clientWidth, cssHeight:c.clientHeight })),
+                    drawLayer: el?.querySelector(".canvasWrapper")?.outerHTML?.slice(0,300),
+                  };
+                });
+                return { views };
+              });
+              console.log("WEBKIT-STATE:", JSON.stringify({...result, ...render}));
+              if (result.pages !== 65 || !render.views.some(v => v.renderingState === 3 && v.canvas.some(c=>c.width>0))) process.exitCode = 1;
             } catch (error) { console.log("WEBKIT-EXCEPTION:", error.message); process.exitCode = 1; }
             await page.close();
           }
