@@ -24,7 +24,9 @@ function redirectAssetToReader(url) {
   const replacement = new URL(source.pathname + source.search, url.origin);
   const redirect = new URL(url);
   redirect.searchParams.set("file", replacement.href);
-  return Response.redirect(redirect.href, 302);
+  const response = Response.redirect(redirect.href, 302);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 
 async function servePdf(request, env, url) {
@@ -80,7 +82,8 @@ export default {
     if (url.pathname.startsWith("/pdfs/")) {
       return servePdf(request, env, url);
     }
-    if (url.pathname === "/web/viewer.html" && request.method === "GET") {
+    if ((url.pathname === "/web/viewer.html" || url.pathname === "/web/viewer") &&
+        (request.method === "GET" || request.method === "HEAD")) {
       const redirect = redirectAssetToReader(url);
       if (redirect) return redirect;
     }
