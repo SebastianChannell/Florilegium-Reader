@@ -38,6 +38,12 @@ jobs:
             echo "first bytes: $(od -An -tx1 -N16 "/tmp/$item-range.body")"
             echo "::endgroup::"
           done
+          echo "::group::Check optimized reader derivative is live"
+          curl --retry 5 --retry-delay 5 --max-time 25 -fsSI "https://reader.sacrumflorilegium.com/pdfs/viva-el-rey.pdf?render=low-memory-1" \
+            | tee /tmp/optimized-live.headers
+          grep -qi '^content-length: 7602641' /tmp/optimized-live.headers
+          echo "Optimized 7,602,641-byte PDF is live on Reader domain"
+          echo "::endgroup::"
           echo "::group::Viewer legacy link redirect"
           curl --max-time 25 -sSI "$VIEWER" | grep -Ei '^(HTTP/|content-type:|content-length:|location:|cf-ray:)' || true
           echo "::endgroup::"
