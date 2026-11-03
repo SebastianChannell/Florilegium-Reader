@@ -2,26 +2,54 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/worker.mjs";
 
-test("the worker delegates requests to static assets", async () => {
-  const request = new Request("https://reader.example/web/viewer.html");
-  let receivedRequest = null;
-
-  const expected = new Response("viewer", {
-    status: 200,
-    headers: { "Content-Type": "text/html" },
-  });
-
-  const env = {
-    ASSETS: {
-      fetch(incoming) {
-        receivedRequest = incoming;
-        return expected;
-      },
-    },
+function objectWithBody(range = null) {
+  return {
+    size: 1000,
+    httpEtag: '"example-etag"',
+    range,
+    writeHttpMetadata(headers) { headers.set("Content-Type", "application/octet-stream"); },
+    body: new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([37, 80, 68, 70])); controller.close(); } }),
   };
+}
 
-  const response = await worker.fetch(request, env);
+const makeEnv = () => ({
+  ASSETS: { fetch(request) { return new Response("static:" + new URL(request.url).pathname); } },
+  LIBRARY_BUCKET: {
+    get(key, options) { return objectWithBody(options.range.get("Range") ? { offset: 100, length: 4 } : null); },
+    head(key) { return objectWithBody(null); },
+  },
+});
 
-  assert.equal(receivedRequest, request);
-  assert.equal(response, expected);
+test("existing static assets still work", async () => {
+  const response = await worker.fetch(new Request("https://reader.example/web/viewer.css"), makeEnv());
+  assert.equal(await response.text(), "static:/web/viewer.css");
+});
+
+test("cross-domain PDF links redirect to the same-origin viewer file", async () => {
+  const upstream = "https://assets.sacrumflorilegium.com/pdfs/viva-el-rey.pdf?v=abc";
+  const viewer = `https://reader.example/web/viewer.html?file=${encodeURIComponent(upstream)}`;
+  const response = await worker.fetch(new Request(viewer), makeEnv());
+  assert.equal(response.status, 302);
+  const redirect = new URL(response.headers.get("location"));
+  assert.equal(redirect.searchParams.get("file"), "https://reader.example/pdfs/viva-el-rey.pdf?v=abc");
+});
+
+test("same-origin PDF streams partial content with byte range headers", async () => {
+  const response = await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf", {
+    headers: { Range: "bytes=100-103" },
+  }), makeEnv());
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get("Content-Range"), "bytes 100-103/1000");
+  assert.equal(response.headers.get("Content-Length"), "4");
+  assert.equal(response.headers.get("Content-Type"), "application/pdf");
+  assert.equal(response.headers.get("Accept-Ranges"), "bytes");
+});
+
+test("HEAD, invalid request method, and unsafe PDF paths", async () => {
+  const env = makeEnv();
+  const head = await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf", { method: "HEAD" }), env);
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get("Content-Length"), "1000");
+  assert.equal((await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf", { method: "POST" }), env)).status, 405);
+  assert.equal((await worker.fetch(new Request("https://reader.example/pdfs/%2e%2e%2fsecret.pdf"), env)).status, 404);
 });
