@@ -15,7 +15,13 @@ function objectWithBody(range = null) {
 const makeEnv = () => ({
   ASSETS: { fetch(request) { return new Response("static:" + new URL(request.url).pathname); } },
   LIBRARY_BUCKET: {
-    get(key, options) { return objectWithBody(options.range.get("Range") ? { offset: 100, length: 4 } : null); },
+    get(key, options) {
+      const range = options.range.get("Range");
+      if (range === "bytes=100-103") return objectWithBody({ offset: 100, length: 4 });
+      if (range === "bytes=500-") return objectWithBody({ offset: 500 });
+      if (range === "bytes=-100") return objectWithBody({ suffix: 100 });
+      return objectWithBody(null);
+    },
     head(key) { return objectWithBody(null); },
   },
 });
@@ -52,4 +58,16 @@ test("HEAD, invalid request method, and unsafe PDF paths", async () => {
   assert.equal(head.headers.get("Content-Length"), "1000");
   assert.equal((await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf", { method: "POST" }), env)).status, 405);
   assert.equal((await worker.fetch(new Request("https://reader.example/pdfs/%2e%2e%2fsecret.pdf"), env)).status, 404);
+});
+
+test("open-ended and suffix byte ranges are returned correctly", async () => {
+  const env = makeEnv();
+  const start = await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf", { headers: { Range: "bytes=500-" } }), env);
+  assert.equal(start.status, 206);
+  assert.equal(start.headers.get("Content-Range"), "bytes 500-999/1000");
+  assert.equal(start.headers.get("Content-Length"), "500");
+  const suffix = await worker.fetch(new Request("https://reader.example/pdfs/viva-el-rey.pdf", { headers: { Range: "bytes=-100" } }), env);
+  assert.equal(suffix.status, 206);
+  assert.equal(suffix.headers.get("Content-Range"), "bytes 900-999/1000");
+  assert.equal(suffix.headers.get("Content-Length"), "100");
 });
