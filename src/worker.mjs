@@ -24,9 +24,13 @@ function redirectAssetToReader(url) {
   const replacement = new URL(source.pathname + source.search, url.origin);
   const redirect = new URL(url);
   redirect.searchParams.set("file", replacement.href);
-  const response = Response.redirect(redirect.href, 302);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: redirect.href,
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 async function servePdf(request, env, url) {
