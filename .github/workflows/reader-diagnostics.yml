@@ -88,3 +88,41 @@ jobs:
           }
           await browser.close();
           NODE
+
+      - name: Check mobile Safari-like WebKit PDF rendering
+        shell: bash
+        run: |
+          set -e
+          /tmp/reader-browser/node_modules/.bin/playwright install --with-deps webkit
+          node --input-type=module <<'NODE'
+          import { webkit } from '/tmp/reader-browser/node_modules/playwright/index.mjs';
+          const browser = await webkit.launch({ headless: true });
+          const context = await browser.newContext({
+            viewport: { width: 390, height: 844 },
+            isMobile: true,
+            hasTouch: true,
+          });
+          for (const path of ["/web/viewer.html", "/web/viewer"]) {
+            const file = "https://assets.sacrumflorilegium.com/pdfs/viva-el-rey.pdf";
+            const url = "https://reader.sacrumflorilegium.com" + path + "?file=" + encodeURIComponent(file);
+            const page = await context.newPage();
+            console.log("WEBKIT-START:", url);
+            page.on("console", msg => { if (msg.type() === "error") console.log("WEBKIT-CONSOLE:", msg.text().slice(0,600)); });
+            page.on("pageerror", err => console.log("WEBKIT-ERROR:", err.message));
+            page.on("requestfailed", req => console.log("WEBKIT-REQUEST-FAILED:", req.url().slice(0,180), req.failure()?.errorText));
+            try {
+              await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+              await page.waitForTimeout(12000);
+              const result = await page.evaluate(() => ({
+                currentUrl: location.href,
+                pages: globalThis.PDFViewerApplication?.pdfDocument?.numPages ?? null,
+                errorText: document.querySelector("#errorWrapper")?.innerText?.slice(0,500) ?? null,
+                renderedPages: document.querySelectorAll(".page").length,
+              }));
+              console.log("WEBKIT-STATE:", JSON.stringify(result));
+              if (result.pages !== 65) process.exitCode = 1;
+            } catch (error) { console.log("WEBKIT-EXCEPTION:", error.message); process.exitCode = 1; }
+            await page.close();
+          }
+          await browser.close();
+          NODE
